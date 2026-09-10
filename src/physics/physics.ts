@@ -1,4 +1,5 @@
 import * as CANNON from 'cannon-es';
+import { GRAVITY } from '../constants';
 
 /**
  * The physics world.
@@ -15,16 +16,37 @@ import * as CANNON from 'cannon-es';
  */
 
 /**
- * The physics tick rate: 60 simulation steps per second, i.e. dt = 1/60 s.
+ * The physics tick rate.
  *
- * This is deliberately a *constant*, not the frame time. Numerical integration
- * is only stable and repeatable for a fixed dt: feed the same simulation a 1/144
+ * It is deliberately a *constant*, not the frame time. Numerical integration is
+ * only stable and repeatable for a fixed dt: feed the same simulation a 1/144
  * step on one machine and a 1/30 step on another and the ball lands in different
- * places, and a long frame (tab switch, GC pause) can push a body straight
- * through a wall. See `core/loop.ts` for how the variable frame rate is
- * reconciled with this fixed rate.
+ * places. See `core/loop.ts` for how the variable frame rate is reconciled with
+ * this fixed rate.
+ *
+ * **Why 240 Hz and not the more usual 60.** A discrete simulation only ever
+ * tests for collisions at the positions it samples. Between two samples the ball
+ * teleports, so anything thinner than the gap can be skipped entirely — this is
+ * *tunnelling*, and it is the single most common way a game physics setup
+ * quietly lies to the player.
+ *
+ * The numbers here are not hypothetical. At the top of the power range the ball
+ * travels **0.563 m per 60 Hz step**, while the keeper's body is 0.56 m thick
+ * and a goalpost is 0.12 m thick. At 60 Hz a hard shot could pass clean through
+ * either between samples, or — worse — be noticed only once it was already deep
+ * inside, at which point the solver would shove it out of whichever face it was
+ * nearest, sometimes *into* the goal. Measured: contacts caught at the keeper's
+ * front face removed ~60% of the ball's speed, while late ones removed ~15% and
+ * the ball carried on in.
+ *
+ * At 240 Hz the ball moves ~0.14 m per step, comfortably inside both. The cost
+ * is four times as many steps, which for a world of eight bodies is nothing.
+ *
+ * The general lesson: the timestep has to be chosen against the *thinnest*
+ * collider and the *fastest* body in the scene, not picked by convention.
  */
-export const FIXED_TIMESTEP = 1 / 60;
+export const PHYSICS_HZ = 240;
+export const FIXED_TIMESTEP = 1 / PHYSICS_HZ;
 
 /**
  * Surface materials.
@@ -38,13 +60,14 @@ export const FIXED_TIMESTEP = 1 / 60;
 export const MATERIALS = {
   ball: new CANNON.Material('ball'),
   ground: new CANNON.Material('ground'),
-  /** Posts and crossbar (used from phase 3). */
+  /** Posts and crossbar. */
   frame: new CANNON.Material('frame'),
+  keeper: new CANNON.Material('keeper'),
 };
 
 export function createPhysicsWorld(): CANNON.World {
   const world = new CANNON.World({
-    gravity: new CANNON.Vec3(0, -9.82, 0),
+    gravity: new CANNON.Vec3(0, -GRAVITY, 0),
   });
 
   /**
@@ -81,6 +104,17 @@ export function createPhysicsWorld(): CANNON.World {
       // Woodwork is livelier than turf — this is what makes a post hit fun.
       restitution: 0.8,
       friction: 0.1,
+    }),
+  );
+
+  /**
+   * The keeper deadens the ball rather than pinging it: gloves and a body absorb
+   * far more energy than a post does.
+   */
+  world.addContactMaterial(
+    new CANNON.ContactMaterial(MATERIALS.ball, MATERIALS.keeper, {
+      restitution: 0.35,
+      friction: 0.6,
     }),
   );
 

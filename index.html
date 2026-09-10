@@ -8,15 +8,169 @@
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; }
       /* The renderer's canvas fills the window; the HUD will later overlay it. */
       canvas { display: block; }
+      /* An author `display` rule outranks the user-agent `[hidden]` rule, so
+         anything with `display: grid` would stay visible while hidden. Make the
+         attribute win everywhere. */
+      [hidden] { display: none !important; }
       #hint {
         position: fixed; left: 12px; bottom: 12px;
         font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
         color: #cfe3ff; opacity: 0.65; pointer-events: none;
       }
+      /* Power meter: a fixed-width track whose fill is scaled horizontally.
+         Animating `transform` keeps the change off the layout path. */
+      .power-meter {
+        position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%);
+        width: 280px; height: 14px; border-radius: 7px;
+        background: rgba(11, 16, 32, 0.65);
+        border: 1px solid rgba(207, 227, 255, 0.35);
+        overflow: hidden; pointer-events: none;
+      }
+      .power-meter__fill {
+        width: 100%; height: 100%;
+        transform-origin: left center; transform: scaleX(0);
+      }
+      .score {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        text-align: center; color: #eaf1ff; pointer-events: none;
+        font: 600 26px/1 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+      .score__pips { display: flex; gap: 7px; justify-content: center; margin-top: 9px; }
+      .pip {
+        width: 11px; height: 11px; border-radius: 50%;
+        border: 1.5px solid rgba(234, 241, 255, 0.55); background: transparent;
+      }
+      .pip--goal { background: #4ade80; border-color: #4ade80; }
+      .pip--missed { background: rgba(234, 241, 255, 0.22); }
+
+      .banner {
+        position: fixed; top: 38%; left: 50%; transform: translate(-50%, -50%);
+        color: #fff; letter-spacing: 0.04em; pointer-events: none; white-space: nowrap;
+        font: 700 clamp(28px, 6vw, 56px)/1 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        text-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+      }
+      .banner[data-outcome="GOAL"] { color: #4ade80; }
+      .banner[data-outcome="SAVE"] { color: #7dd3fc; }
+      .banner[data-outcome="POST"] { color: #fbbf24; }
+      .banner[data-outcome="MISS"] { color: #f87171; }
+
+      .result {
+        position: fixed; inset: 0; display: grid; place-content: center;
+        gap: 6px; text-align: center; color: #eaf1ff;
+        background: rgba(11, 16, 32, 0.82); backdrop-filter: blur(3px);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      .result__heading { margin: 0; font-size: clamp(40px, 9vw, 76px); font-weight: 700; }
+      .result__detail { margin: 0 0 18px; opacity: 0.72; }
+      .result__button {
+        justify-self: center; padding: 11px 26px; border-radius: 999px;
+        border: 1px solid rgba(234, 241, 255, 0.45);
+        background: transparent; color: #eaf1ff; font: inherit; font-size: 15px;
+        cursor: pointer;
+      }
+      .result__button:hover { background: rgba(234, 241, 255, 0.12); }
+
+      .curve {
+        position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+        width: 220px; text-align: center; pointer-events: none;
+        font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: rgba(207, 227, 255, 0.55); letter-spacing: 0.06em;
+      }
+      .curve--active { color: #fbbf24; }
+      .curve__track {
+        position: relative; height: 3px; border-radius: 2px; margin-top: 4px;
+        background: rgba(207, 227, 255, 0.2);
+      }
+      .curve__knob {
+        position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%;
+        background: currentColor; transform: translate(-50%, -50%);
+        transition: left 90ms ease-out;
+      }
+
+      .debug {
+        position: fixed; top: 14px; right: 14px; padding: 10px 12px;
+        border-radius: 8px; background: rgba(11, 16, 32, 0.85);
+        border: 1px solid rgba(207, 227, 255, 0.2); color: #cfe3ff;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .debug__row { display: flex; flex-direction: column; gap: 6px; }
+
+      .toast {
+        position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
+        padding: 6px 14px; border-radius: 999px; pointer-events: none;
+        background: rgba(11, 16, 32, 0.8); color: #cfe3ff;
+        font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .colophon {
+        position: fixed; right: 12px; bottom: 12px;
+        background: none; border: 0; cursor: pointer; padding: 0;
+        font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #cfe3ff; opacity: 0.5;
+      }
+      .colophon:hover { opacity: 0.9; }
+
+      .about {
+        position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
+        padding: 20px; background: rgba(11, 16, 32, 0.72); backdrop-filter: blur(4px);
+      }
+      .about__panel {
+        position: relative; max-width: 560px; max-height: 80vh; overflow-y: auto;
+        padding: 26px 30px; border-radius: 14px;
+        background: #141d33; border: 1px solid rgba(207, 227, 255, 0.18);
+        color: #dbe6fb; font: 14px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      .about__panel h2 { margin: 0 0 12px; font-size: 20px; }
+      .about__panel ul { padding-left: 18px; }
+      .about__panel li { margin-bottom: 7px; }
+      .about__panel a { color: #7dd3fc; }
+      .about__footer { margin-bottom: 0; }
+      .about__close {
+        position: absolute; top: 10px; right: 14px;
+        background: none; border: 0; cursor: pointer;
+        color: #dbe6fb; font-size: 24px; line-height: 1; opacity: 0.6;
+      }
+      .about__close:hover { opacity: 1; }
+
+      @media (max-width: 640px) {
+        .score { font-size: 20px; }
+        .power-meter { width: min(280px, 72vw); }
+        .curve { width: min(220px, 68vw); }
+      }
     </style>
   </head>
   <body>
-    <div id="hint">phase 1 — space / R drops the ball · drag to rotate, scroll to zoom</div>
+    <div id="hint">
+      aim: move · kick: hold &amp; release · curve: A / D<br />
+      M sound · ` debug · R reset · O dev camera
+    </div>
+    <button class="colophon" type="button">how this was built</button>
+
+    <div class="about" hidden>
+      <div class="about__panel">
+        <button class="about__close" type="button" aria-label="Close">&times;</button>
+        <h2>How this was built</h2>
+        <p>
+          A first-person penalty shootout, written to learn 3D on the web rather
+          than to ship a product. No game engine and no React Three Fiber &mdash;
+          the point was to see what those abstract away.
+        </p>
+        <ul>
+          <li><strong>Three.js</strong>, used directly: scene graph, one directional light plus ambient, flat-shaded primitives.</li>
+          <li><strong>cannon-es</strong> for physics, on a fixed 60&nbsp;Hz timestep decoupled from the render loop. Bodies own position; meshes are copied from them every frame.</li>
+          <li>Everything is at real-world scale &mdash; 7.32&times;2.44&nbsp;m goal, 11&nbsp;m spot, a 0.43&nbsp;kg ball &mdash; so gravity feels right.</li>
+          <li>The kick is a single impulse, with an explicit correction for the metre the ball drops on its way to the goal.</li>
+          <li>Curve is a constant sideways force, not real Magnus. Real curve depends on spin; at penalty distance nobody can tell.</li>
+          <li>Goal detection is a sensor volume behind the line, not a position check &mdash; a 30&nbsp;m/s shot moves half a metre per tick and would tunnel straight through a plane test.</li>
+          <li>Sound is synthesised with the Web Audio API. Zero bytes shipped, no licences to track.</li>
+        </ul>
+        <p class="about__footer">
+          <!-- TODO: point this at the main site once the subdomain is chosen. -->
+          <a href="/" rel="noreferrer">More writing &rarr;</a>
+        </p>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
