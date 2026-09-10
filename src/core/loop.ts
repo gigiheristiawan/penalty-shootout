@@ -16,10 +16,16 @@ import { FIXED_TIMESTEP } from '../physics/physics';
  *     while (accumulator >= dt) { update(dt); accumulator -= dt }
  *     render()
  *
- * So a 144 Hz display usually runs 0 or 1 ticks per frame and a 30 Hz one runs
- * 2, but both advance the world by the same amount per second, with the same
- * arithmetic. The backend analogue: the simulation is a queue consumer draining
- * fixed-size units of work, not something running inline in the request handler.
+ * So both a 144 Hz and a 30 Hz display advance the world by the same amount per
+ * second, with the same arithmetic — the faster one simply runs fewer physics
+ * ticks per frame. The backend analogue: the simulation is a queue consumer
+ * draining fixed-size units of work, not something running inline in the request
+ * handler.
+ *
+ * Because physics runs at 240 Hz (see FIXED_TIMESTEP for why) and a typical
+ * display refreshes at 60, this loop normally drains about four ticks per frame.
+ * That is the accumulator doing exactly its job: the simulation rate and the
+ * display rate are now completely independent numbers.
  */
 
 export interface LoopCallbacks {

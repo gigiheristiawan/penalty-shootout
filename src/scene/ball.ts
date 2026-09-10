@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { BALL_MASS, BALL_RADIUS, PALETTE, PENALTY_SPOT_DISTANCE } from '../constants';
+import {
+  BALL_MASS,
+  BALL_RADIUS,
+  CURVE_FORCE,
+  GRAVITY,
+  KICK_MAX_SPEED,
+  KICK_MIN_SPEED,
+  PALETTE,
+  PENALTY_SPOT_DISTANCE,
+} from '../constants';
 import { MATERIALS } from '../physics/physics';
 import type { PhysicsLink } from '../physics/sync';
 
@@ -98,4 +107,82 @@ export function createPenaltySpot(): THREE.Mesh {
   spot.position.set(0, 0.01, PENALTY_SPOT_DISTANCE);
   spot.receiveShadow = true;
   return spot;
+}
+
+/**
+ * Kick the ball at a target point (spec §7: one impulse from aim, power and
+ * elevation).
+ *
+ * An **impulse** is an instantaneous change of momentum: J = m · Δv, measured in
+ * newton-seconds. It is the right tool for a kick because the contact lasts
+ * ~10 ms — far shorter than one 16 ms physics tick — so modelling it as a force
+ * applied over time would need a sub-step the simulation does not have.
+ * `applyImpulse` divides by the mass internally, which is why a heavier ball
+ * would leave slower for the same impulse.
+ */
+export function kickBall(
+  body: CANNON.Body,
+  target: THREE.Vector3,
+  power: number,
+): void {
+  body.wakeUp();
+
+  // Aim direction, from wherever the ball actually is to the target.
+  const toTarget = new CANNON.Vec3(
+    target.x - body.position.x,
+    target.y - body.position.y,
+    target.z - body.position.z,
+  );
+
+  const speed = KICK_MIN_SPEED + (KICK_MAX_SPEED - KICK_MIN_SPEED) * power;
+  const velocity = toTarget.unit().scale(speed);
+
+  /**
+   * Gravity compensation.
+   *
+   * Firing straight at the target would undershoot badly: at ~25 m/s the ball
+   * takes ~0.45 s to cover 11 m and falls ~1 m in that time, so aiming at the
+   * top corner would hit the turf. A real taker corrects for this without
+   * thinking; the aim marker should mean what it says, so we do it in code.
+   *
+   * Projectile motion: vertical drop over a flight time t is ½·g·t². Adding
+   * ½·g·t to the vertical velocity cancels exactly that drop. The flight time
+   * is estimated from the horizontal speed, which is a slight underestimate
+   * (the extra lift stretches the flight a little) — the residual error is a
+   * few centimetres, and linear damping eats some of it back.
+   */
+  const horizontalDistance = Math.hypot(toTarget.x, toTarget.z);
+  const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+  const flightTime = horizontalDistance / horizontalSpeed;
+  velocity.y += 0.5 * GRAVITY * flightTime;
+
+  // Δv is the whole velocity because the ball starts at rest on the spot.
+  body.applyImpulse(velocity.scale(body.mass));
+}
+
+/**
+ * Curve — a fake Magnus effect (spec §7).
+ *
+ * Real curve comes from spin. A spinning ball drags a thin layer of air around
+ * with it; on one side that layer moves with the airflow and on the other
+ * against it, so pressure differs across the ball and it is pushed sideways.
+ * That is the Magnus force, and it depends on the spin axis, the spin rate and
+ * the airspeed, all of which change continuously through the flight.
+ *
+ * cannon-es models none of it — it has no fluid. Simulating it properly would
+ * mean tracking angular velocity and computing ω × v every tick, which is
+ * doable but tunes badly: the player sets a curve *intent* before the kick, not
+ * a spin vector.
+ *
+ * So this is a constant sideways force while the ball is airborne. It bends the
+ * path smoothly, it is trivially tunable with one number, and at penalty
+ * distance nobody can tell the difference. Applying it only while the ball is
+ * off the ground matters — a rolling ball being shoved sideways by an invisible
+ * hand looks obviously wrong.
+ */
+export function applyCurve(body: CANNON.Body, curve: number): void {
+  if (curve === 0) return;
+  if (body.position.y < BALL_RADIUS * 1.5) return;
+
+  body.applyForce(new CANNON.Vec3(curve * CURVE_FORCE, 0, 0));
 }

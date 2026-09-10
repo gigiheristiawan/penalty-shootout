@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import {
   GOAL_HEIGHT,
   GOAL_LINE_Z,
@@ -6,6 +7,7 @@ import {
   PALETTE,
   POST_RADIUS,
 } from '../constants';
+import { MATERIALS } from '../physics/physics';
 
 /**
  * A Three.js `Scene` is a *scene graph*: a tree of objects, each with a local
@@ -21,7 +23,7 @@ export function createWorld(): THREE.Scene {
    * Fog fades distant geometry towards a colour. It costs nothing and hides the
    * hard edge where our finite pitch plane stops.
    */
-  scene.fog = new THREE.Fog(PALETTE.fog, 25, 90);
+  scene.fog = new THREE.Fog(PALETTE.fog, 30, 130);
 
   scene.add(createPitch());
   scene.add(createGoal());
@@ -40,7 +42,7 @@ export function createWorld(): THREE.Scene {
 function createPitch(): THREE.Object3D {
   const pitch = new THREE.Group();
 
-  const geometry = new THREE.PlaneGeometry(80, 120);
+  const geometry = new THREE.PlaneGeometry(300, 300);
   const material = new THREE.MeshLambertMaterial({ color: PALETTE.grass });
   const ground = new THREE.Mesh(geometry, material);
   ground.rotation.x = -Math.PI / 2;
@@ -54,7 +56,7 @@ function createPitch(): THREE.Object3D {
     color: PALETTE.grassStripe,
   });
   for (let i = 0; i < 10; i++) {
-    const stripe = new THREE.Mesh(new THREE.PlaneGeometry(80, 4), stripeMaterial);
+    const stripe = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), stripeMaterial);
     stripe.rotation.x = -Math.PI / 2;
     stripe.position.set(0, 0, GOAL_LINE_Z + 2 + i * 8);
     stripe.receiveShadow = true;
@@ -183,4 +185,109 @@ function addLighting(scene: THREE.Scene): void {
   shadowCamera.updateProjectionMatrix();
 
   scene.add(sun);
+}
+
+/**
+ * The goal's physics half: three solid cylinders and one invisible sensor box.
+ *
+ * These are static (`mass: 0`) bodies with no meshes of their own — the frame is
+ * already drawn by `createGoal()` above, and they are positioned from the same
+ * constants, so the two agree by construction.
+ */
+export interface GoalColliders {
+  /** Left post, right post, crossbar. Anything the ball can rattle off. */
+  frame: CANNON.Body[];
+  /** The scoring volume just behind the goal line. */
+  sensor: CANNON.Body;
+}
+
+export function createGoalColliders(): GoalColliders {
+  return { frame: createFrameBodies(), sensor: createGoalSensor() };
+}
+
+/**
+ * Posts and crossbar as collision geometry.
+ *
+ * cannon-es builds a `Cylinder` along its local +Y axis — the same convention as
+ * Three.js `CylinderGeometry` — so these need exactly the rotations their meshes
+ * needed: none for the posts, 90° about Z for the bar.
+ *
+ * Spec §7 is right that this is free fun: nothing here special-cases a post hit.
+ * The ball rattling in off the underside of the bar is just the solver doing its
+ * job, and it is the moment the physics engine starts paying for itself.
+ */
+function createFrameBodies(): CANNON.Body[] {
+  const bodies: CANNON.Body[] = [];
+  const halfWidth = GOAL_WIDTH / 2;
+
+  for (const side of [-1, 1]) {
+    const post = new CANNON.Body({
+      mass: 0,
+      shape: new CANNON.Cylinder(POST_RADIUS, POST_RADIUS, GOAL_HEIGHT, 12),
+      material: MATERIALS.frame,
+    });
+    post.position.set(side * halfWidth, GOAL_HEIGHT / 2, GOAL_LINE_Z);
+    bodies.push(post);
+  }
+
+  /**
+   * The crossbar is a Box, not a Cylinder — deliberately, and not for tidiness.
+   *
+   * cannon-es implements `Cylinder` as a `ConvexPolyhedron`, and a *rotated*
+   * convex polyhedron does not produce a contact the solver will resolve: a ball
+   * dropped onto a crossbar-shaped cylinder rotated 90° fires a collision event
+   * and then falls straight through it. Upright cylinders (the posts) are fine,
+   * which is why only the bar is affected.
+   *
+   * A box needs no rotation at all — it can simply be made long in X — and it
+   * sidesteps the bug entirely. The visible crossbar stays a cylinder; collision
+   * shapes have never had to match the mesh.
+   */
+  const crossbar = new CANNON.Body({
+    mass: 0,
+    shape: new CANNON.Box(
+      new CANNON.Vec3(GOAL_WIDTH / 2 + POST_RADIUS, POST_RADIUS, POST_RADIUS),
+    ),
+    material: MATERIALS.frame,
+  });
+  crossbar.position.set(0, GOAL_HEIGHT, GOAL_LINE_Z);
+  bodies.push(crossbar);
+
+  return bodies;
+}
+
+/**
+ * The goal sensor (spec §7).
+ *
+ * A **sensor** (cannon-es calls it a trigger) is a body that takes part in
+ * collision *detection* but not in collision *response*: `isTrigger` keeps the
+ * contact out of the solver, so the ball passes straight through while still
+ * firing a `collide` event. That is the whole mechanism behind "did it go in".
+ *
+ * Detecting a goal this way rather than by testing the ball's position each tick
+ * matters because of tunnelling: a 30 m/s shot moves half a metre per 60 Hz
+ * step, so a position check against the goal *line* could be on one side at tick
+ * n and well past it at tick n+1. A box with real depth is much harder to skip,
+ * and cannon-es's own collision detection does the work.
+ *
+ * The box spans the full mouth (so a shot inside the post but under the bar
+ * counts) and sits behind the line, so the ball must fully cross to score.
+ *
+ * `CANNON.Box` takes *half* extents, not sizes — a common off-by-two.
+ */
+function createGoalSensor(): CANNON.Body {
+  const halfDepth = 0.25;
+
+  const sensor = new CANNON.Body({
+    mass: 0,
+    isTrigger: true,
+    shape: new CANNON.Box(
+      new CANNON.Vec3(GOAL_WIDTH / 2, GOAL_HEIGHT / 2, halfDepth),
+    ),
+  });
+
+  // Front face at z = -0.1, so the ball's centre is a radius past the line.
+  sensor.position.set(0, GOAL_HEIGHT / 2, GOAL_LINE_Z - halfDepth - 0.1);
+
+  return sensor;
 }
