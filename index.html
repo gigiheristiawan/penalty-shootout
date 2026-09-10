@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Penalty Shootout</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; }
+      /* The renderer's canvas fills the window; the HUD will later overlay it. */
+      canvas { display: block; }
+      #hint {
+        position: fixed; left: 12px; bottom: 12px;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #cfe3ff; opacity: 0.65; pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hint">phase 1 — space / R drops the ball · drag to rotate, scroll to zoom</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
